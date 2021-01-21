@@ -1,10 +1,11 @@
-package internal
+package coral
 
 import (
 	"context"
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -67,7 +68,10 @@ func ProcessSite(ctx context.Context, db *mongo.Database, tenantID, siteID strin
 
 	// Store all the counts for this site.
 	var site Site
-	site.CommentCounts.Action = make(map[string]int64)
+	site.CommentCounts.Action = make(map[string]int)
+
+	started := time.Now()
+	logrus.Info("loading counts from site stories")
 
 	// While there is still results to handle, decode the results.
 	for cursor.Next(ctx) {
@@ -84,10 +88,15 @@ func ProcessSite(ctx context.Context, db *mongo.Database, tenantID, siteID strin
 		return errors.Wrap(err, "could not iterate on cursor")
 	}
 
+	logrus.WithField("took", time.Since(started)).Info("loaded counts from site stories")
+
+	started = time.Now()
+	logrus.Info("updating site")
+
 	// Update the site.
 	if _, err := db.Collection("sites").UpdateOne(ctx, bson.D{
-		primitive.E{Key: "id", Value: siteID},
 		primitive.E{Key: "tenantID", Value: tenantID},
+		primitive.E{Key: "id", Value: siteID},
 	}, bson.D{
 		primitive.E{Key: "$set", Value: bson.D{
 			primitive.E{Key: "commentCounts", Value: site.CommentCounts},
@@ -95,6 +104,11 @@ func ProcessSite(ctx context.Context, db *mongo.Database, tenantID, siteID strin
 	}); err != nil {
 		return errors.Wrap(err, "could not update the site")
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"id":   siteID,
+		"took": time.Since(started),
+	}).Info("site updated")
 
 	return nil
 }

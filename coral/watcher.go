@@ -1,4 +1,4 @@
-package internal
+package coral
 
 import (
 	"context"
@@ -15,17 +15,20 @@ import (
 // NewWatcher will return a watcher that can watch for collection changes to
 // ensure we're in sync.
 func NewWatcher(db *mongo.Database, tenantID, siteID string) *Watcher {
+	events := make([]WatchEvent, 0)
+
 	return &Watcher{
 		db:       db,
 		tenantID: tenantID,
 		siteID:   siteID,
-		events:   make([]WatchEvent, 0),
+		events:   events,
+		ready:    make(chan struct{}),
 	}
 }
 
 // WatchEvent is used to return which record has been modified.
 type WatchEvent struct {
-	OperationType string `bson:"opeartionType"`
+	OperationType string `bson:"operationType"`
 	FullDocument  struct {
 		ID      string `bson:"id"`
 		StoryID string `bson:"storyID"`
@@ -39,7 +42,21 @@ type Watcher struct {
 	tenantID string
 	siteID   string
 	events   []WatchEvent
+	ready    chan struct{}
 	mux      sync.Mutex
+}
+
+// Wait will wait until the watcher is listening for events or the context
+// expires.
+func (w *Watcher) Wait(ctx context.Context) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-w.ready:
+			return nil
+		}
+	}
 }
 
 // Watch will watch for changes to the comments collection, and mark those
@@ -77,6 +94,9 @@ func (w *Watcher) Watch(ctx context.Context) error {
 		return errors.Wrap(err, "could not watch the change stream")
 	}
 	defer cs.Close(ctx)
+
+	// We're listening to events, send the ready signal!
+	w.ready <- struct{}{}
 
 	// Continue iterating over this change stream until either the context is
 	// cancelled or there is an error.

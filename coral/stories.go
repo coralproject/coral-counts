@@ -1,4 +1,4 @@
-package internal
+package coral
 
 import (
 	"context"
@@ -12,14 +12,11 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// MaxBatchWriteSize is the maximum size of batch write operations.
-const MaxBatchWriteSize = 200
-
 // Comment is a Comment in Coral.
 type Comment struct {
-	StoryID      string           `bson:"storyID"`
-	Status       string           `bson:"status"`
-	ActionCounts map[string]int64 `bson:"actionCounts"`
+	StoryID      string         `bson:"storyID"`
+	Status       string         `bson:"status"`
+	ActionCounts map[string]int `bson:"actionCounts"`
 }
 
 // Story is a Story in Coral.
@@ -119,6 +116,9 @@ func ProcessStories(ctx context.Context, db *mongo.Database, tenantID, siteID st
 	// Store all the stories in this map.
 	stories := make(map[string]*Story)
 
+	started := time.Now()
+	logrus.WithField("siteID", siteID).Info("loading stories from comments")
+
 	// While there is still results to handle, decode the results.
 	for cursor.Next(ctx) {
 		var comment Comment
@@ -132,7 +132,7 @@ func ProcessStories(ctx context.Context, db *mongo.Database, tenantID, siteID st
 			story = &Story{}
 			stories[comment.StoryID] = story
 
-			story.CommentCounts.Action = make(map[string]int64)
+			story.CommentCounts.Action = make(map[string]int)
 		}
 
 		// Increment the story document based on this comment.
@@ -145,7 +145,8 @@ func ProcessStories(ctx context.Context, db *mongo.Database, tenantID, siteID st
 
 	logrus.WithFields(logrus.Fields{
 		"stories": len(stories),
-	}).Info("finished loading stories")
+		"took":    time.Since(started),
+	}).Info("loaded stories from comments")
 
 	// We will collect all the bulk write operations that we'll use to update the
 	// stories here.
@@ -158,8 +159,9 @@ func ProcessStories(ctx context.Context, db *mongo.Database, tenantID, siteID st
 
 		// Select the story we're updating.
 		update.SetFilter(bson.D{
-			primitive.E{Key: "id", Value: storyID},
+			primitive.E{Key: "tenantID", Value: tenantID},
 			primitive.E{Key: "siteID", Value: siteID},
+			primitive.E{Key: "id", Value: storyID},
 		})
 
 		// Update it with the counts.
@@ -167,6 +169,11 @@ func ProcessStories(ctx context.Context, db *mongo.Database, tenantID, siteID st
 			primitive.E{Key: "$set", Value: bson.D{
 				primitive.E{Key: "commentCounts", Value: story.CommentCounts},
 			}},
+		})
+
+		update.SetHint(bson.D{
+			primitive.E{Key: "tenantID", Value: 1},
+			primitive.E{Key: "id", Value: 1},
 		})
 
 		// Add the new update model.

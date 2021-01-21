@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"coral-counts/internal"
 	"fmt"
 	"net/url"
 	"os"
 	"time"
+
+	"coral-counts/coral"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -23,6 +24,9 @@ func run(c *cli.Context) error {
 	databaseURI := c.String("mongoDBURI")
 	dryRun := c.Bool("dryRun")
 	disableWatcher := c.Bool("disableWatcher")
+
+	// Set the batch size.
+	coral.MaxBatchWriteSize = c.Int("batchSize")
 
 	// Parse the database name out of the path component of the uri.
 	u, err := url.Parse(databaseURI)
@@ -63,22 +67,30 @@ func run(c *cli.Context) error {
 	// Get the database handle for the database we're connecting to.
 	db := client.Database(databaseName)
 
-	// Start monitoring for updates to the comments collection to ensure that we
-	// can tag any stories/sites that might have gotten dirty since we started.
-	ctx, cancel = context.WithCancel(context.Background())
-	defer cancel()
-
 	// Create the watcher, and start it.
-	watcher := internal.NewWatcher(db, tenantID, siteID)
+	watcher := coral.NewWatcher(db, tenantID, siteID)
 
 	if !disableWatcher {
 		logrus.Info("starting watcher")
 
+		// Start monitoring for updates to the comments collection to ensure that we
+		// can tag any stories/sites that might have gotten dirty since we started.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
 		go func() {
+			// Cancel the context also if the watcher exits early.
+			defer cancel()
+
 			if err := watcher.Watch(ctx); err != nil {
-				logrus.WithError(err).Fatal("could not watch for changes")
+				logrus.WithError(err).Warn("watcher has failed to start")
 			}
 		}()
+
+		// Wait for the changestream to start.
+		if err := watcher.Wait(ctx); err != nil {
+			logrus.WithError(err).Fatal("could not wait for watcher to start")
+		}
 	} else {
 		logrus.Warn("not starting watcher, --disableWatcher was used")
 	}
@@ -89,20 +101,17 @@ func run(c *cli.Context) error {
 	// updated since it started watching. We'll use this to trigger targeted
 	// re-runs of the recomputation to help ensure that we've scanned everything.
 
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+
 	// Process the stories.
-	if err := internal.ProcessStories(ctx, db, tenantID, siteID, nil, dryRun); err != nil {
+	if err := coral.ProcessStories(ctx, db, tenantID, siteID, nil, dryRun); err != nil {
 		return errors.Wrap(err, "could not process stories")
 	}
 
 	// Process the site.
-	if err := internal.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
+	if err := coral.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
 		return errors.Wrap(err, "could not process site")
-	}
-
-	if disableWatcher {
-		logrus.WithField("took", time.Since(started).String()).Info("finished processing")
-
-		return nil
 	}
 
 	for {
@@ -110,17 +119,21 @@ func run(c *cli.Context) error {
 		// events from the watcher.
 		storyIDs := watcher.Dirty()
 		if len(storyIDs) == 0 {
-			logrus.Info("no more dirty stories were found")
+			logrus.Info("no dirty stories were found")
 			break
 		}
 
+		logrus.WithFields(logrus.Fields{
+			"stories": len(storyIDs),
+		}).Info("recalculating dirty stories")
+
 		// Process the dirty stories.
-		if err := internal.ProcessStories(ctx, db, tenantID, siteID, storyIDs, dryRun); err != nil {
+		if err := coral.ProcessStories(ctx, db, tenantID, siteID, storyIDs, dryRun); err != nil {
 			return errors.Wrap(err, "could not process dirty stories")
 		}
 
 		// Process the site.
-		if err := internal.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
+		if err := coral.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
 			return errors.Wrap(err, "could not process dirty site")
 		}
 	}
@@ -168,6 +181,11 @@ func main() {
 			Name:    "disableWatcher",
 			Usage:   "when used, this tool will not attempt to watch for changes to prevent races",
 			EnvVars: []string{"DISABLE_WATCHER"},
+		},
+		&cli.IntFlag{
+			Name:    "batchSize",
+			Value:   1000,
+			EnvVars: []string{"BATCH_SIZE"},
 		},
 	}
 	app.Action = run

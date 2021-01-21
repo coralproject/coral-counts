@@ -99,7 +99,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 	w.ready <- struct{}{}
 
 	// Continue iterating over this change stream until either the context is
-	// cancelled or there is an error.
+	// canceled or there is an error.
 	for cs.Next(ctx) {
 		var event WatchEvent
 		if err := cs.Decode(&event); err != nil {

@@ -214,9 +214,6 @@ func ProcessStories(ctx context.Context, db *mongo.Database, tenantID, siteID st
 				"updates": len(updates),
 			}).Info("not writing bulk story updates as --dryRun is enabled")
 
-			// Reset the updates slice.
-			updates = make([]mongo.WriteModel, 0)
-
 			return nil
 		}
 
@@ -229,9 +226,6 @@ func ProcessStories(ctx context.Context, db *mongo.Database, tenantID, siteID st
 			"updates":  len(updates),
 			"modified": res.ModifiedCount,
 		}).Info("wrote bulk story updates")
-
-		// Reset the updates slice.
-		updates = make([]mongo.WriteModel, 0)
 	}
 
 	return nil

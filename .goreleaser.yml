@@ -1,0 +1,27 @@
+project_name: coral-counts
+
+builds:
+  - goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+
+archives:
+  - files:
+      - README.md
+
+release:
+  github:
+    owner: wyattjoh
+    name: ims
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"

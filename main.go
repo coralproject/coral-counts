@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
+	"coral-counts/coral"
 	"fmt"
 	"net/url"
 	"os"
 	"time"
-
-	"coral-counts/coral"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -152,6 +151,7 @@ var (
 func main() {
 	app := cli.NewApp()
 	app.Name = "coral-counts"
+	app.Usage = "a tool to update comment counts after a import"
 	app.Version = fmt.Sprintf("%v, commit %v, built at %v", version, commit, date)
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -184,6 +184,7 @@ func main() {
 		},
 		&cli.IntFlag{
 			Name:    "batchSize",
+			Usage:   "specify the batch size to write the update for the stories",
 			Value:   1000,
 			EnvVars: []string{"BATCH_SIZE"},
 		},

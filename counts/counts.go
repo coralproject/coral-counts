@@ -1,4 +1,4 @@
-package coral
+package counts
 
 type CommentCounts struct {
 	Action map[string]int `bson:"action"`

@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"coral-counts/coral"
+	"coral-counts/counts"
 	"fmt"
 	"net/url"
 	"os"
@@ -25,7 +25,7 @@ func run(c *cli.Context) error {
 	disableWatcher := c.Bool("disableWatcher")
 
 	// Set the batch size.
-	coral.MaxBatchWriteSize = c.Int("batchSize")
+	counts.MaxBatchWriteSize = c.Int("batchSize")
 
 	// Parse the database name out of the path component of the uri.
 	u, err := url.Parse(databaseURI)
@@ -67,7 +67,7 @@ func run(c *cli.Context) error {
 	db := client.Database(databaseName)
 
 	// Create the watcher, and start it.
-	watcher := coral.NewWatcher(db, tenantID, siteID)
+	watcher := counts.NewWatcher(db, tenantID, siteID)
 
 	if !disableWatcher {
 		logrus.Info("starting watcher")
@@ -104,12 +104,12 @@ func run(c *cli.Context) error {
 	defer cancel()
 
 	// Process the stories.
-	if err := coral.ProcessStories(ctx, db, tenantID, siteID, nil, dryRun); err != nil {
+	if err := counts.ProcessStories(ctx, db, tenantID, siteID, nil, dryRun); err != nil {
 		return errors.Wrap(err, "could not process stories")
 	}
 
 	// Process the site.
-	if err := coral.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
+	if err := counts.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
 		return errors.Wrap(err, "could not process site")
 	}
 
@@ -127,12 +127,12 @@ func run(c *cli.Context) error {
 		}).Info("recalculating dirty stories")
 
 		// Process the dirty stories.
-		if err := coral.ProcessStories(ctx, db, tenantID, siteID, storyIDs, dryRun); err != nil {
+		if err := counts.ProcessStories(ctx, db, tenantID, siteID, storyIDs, dryRun); err != nil {
 			return errors.Wrap(err, "could not process dirty stories")
 		}
 
 		// Process the site.
-		if err := coral.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
+		if err := counts.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
 			return errors.Wrap(err, "could not process dirty site")
 		}
 	}

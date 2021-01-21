@@ -1,4 +1,4 @@
-package coral
+package counts
 
 import (
 	"context"

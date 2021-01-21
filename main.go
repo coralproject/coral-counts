@@ -20,15 +20,17 @@ func run(c *cli.Context) error {
 	// Grab the parameters from the flags.
 	tenantID := c.String("tenantID")
 	siteID := c.String("siteID")
-	databaseURI := c.String("mongoURI")
+	databaseURI := c.String("mongoDBURI")
+	dryRun := c.Bool("dryRun")
+	disableWatcher := c.Bool("disableWatcher")
 
 	// Parse the database name out of the path component of the uri.
 	u, err := url.Parse(databaseURI)
 	if err != nil {
-		return errors.Wrap(err, "can not parse the --mongoURI")
+		return errors.Wrap(err, "can not parse the --mongoDBURI")
 	}
 	if len(u.Path) < 2 {
-		return errors.Errorf("expected database name in path component of --mongoURI, found %s", u.Path)
+		return errors.Errorf("expected database name in path component of --mongoDBURI, found %s", u.Path)
 	}
 	databaseName := u.Path[1:]
 
@@ -68,24 +70,39 @@ func run(c *cli.Context) error {
 
 	// Create the watcher, and start it.
 	watcher := internal.NewWatcher(db, tenantID, siteID)
-	go func() {
-		if err := watcher.Watch(ctx); err != nil {
-			logrus.WithError(err).Fatal("could not watch for changes")
-		}
-	}()
+
+	if !disableWatcher {
+		logrus.Info("starting watcher")
+
+		go func() {
+			if err := watcher.Watch(ctx); err != nil {
+				logrus.WithError(err).Fatal("could not watch for changes")
+			}
+		}()
+	} else {
+		logrus.Warn("not starting watcher, --disableWatcher was used")
+	}
+
+	started := time.Now()
 
 	// The watcher will collect an event for every comment that is inserted or
 	// updated since it started watching. We'll use this to trigger targeted
 	// re-runs of the recomputation to help ensure that we've scanned everything.
 
 	// Process the stories.
-	if err := internal.ProcessStories(ctx, db, tenantID, siteID, nil); err != nil {
+	if err := internal.ProcessStories(ctx, db, tenantID, siteID, nil, dryRun); err != nil {
 		return errors.Wrap(err, "could not process stories")
 	}
 
 	// Process the site.
-	if err := internal.ProcessSite(ctx, db, tenantID, siteID); err != nil {
+	if err := internal.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
 		return errors.Wrap(err, "could not process site")
+	}
+
+	if disableWatcher {
+		logrus.WithField("took", time.Since(started).String()).Info("finished processing")
+
+		return nil
 	}
 
 	for {
@@ -98,15 +115,17 @@ func run(c *cli.Context) error {
 		}
 
 		// Process the dirty stories.
-		if err := internal.ProcessStories(ctx, db, tenantID, siteID, storyIDs); err != nil {
+		if err := internal.ProcessStories(ctx, db, tenantID, siteID, storyIDs, dryRun); err != nil {
 			return errors.Wrap(err, "could not process dirty stories")
 		}
 
 		// Process the site.
-		if err := internal.ProcessSite(ctx, db, tenantID, siteID); err != nil {
+		if err := internal.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
 			return errors.Wrap(err, "could not process dirty site")
 		}
 	}
+
+	logrus.WithField("took", time.Since(started).String()).Info("finished processing")
 
 	return nil
 }
@@ -126,16 +145,29 @@ func main() {
 			Name:     "tenantID",
 			Usage:    "ID for the Tenant we're refreshing counts on",
 			Required: true,
+			EnvVars:  []string{"TENANT_ID"},
 		},
 		&cli.StringFlag{
 			Name:     "siteID",
 			Usage:    "ID for the Site we're refreshing counts on",
 			Required: true,
+			EnvVars:  []string{"SITE_ID"},
 		},
 		&cli.StringFlag{
-			Name:     "mongoURI",
+			Name:     "mongoDBURI",
 			Usage:    "URI for the MongoDB instance that we're refreshing counts on",
 			Required: true,
+			EnvVars:  []string{"MONGODB_URI"},
+		},
+		&cli.BoolFlag{
+			Name:    "dryRun",
+			Usage:   "when used, this tool will not write any data to the database",
+			EnvVars: []string{"DRY_RUN"},
+		},
+		&cli.BoolFlag{
+			Name:    "disableWatcher",
+			Usage:   "when used, this tool will not attempt to watch for changes to prevent races",
+			EnvVars: []string{"DISABLE_WATCHER"},
 		},
 	}
 	app.Action = run

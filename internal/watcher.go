@@ -87,8 +87,9 @@ func (w *Watcher) Watch(ctx context.Context) error {
 		}
 
 		logrus.WithFields(logrus.Fields{
-			"commentID": event.FullDocument.ID,
-			"storyID":   event.FullDocument.StoryID,
+			"commentID":     event.FullDocument.ID,
+			"storyID":       event.FullDocument.StoryID,
+			"opeartionType": event.OperationType,
 		}).Info("a comment has been changed, marking it's story as dirty")
 
 		// Add this record.

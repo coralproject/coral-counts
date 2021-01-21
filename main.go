@@ -23,6 +23,7 @@ func run(c *cli.Context) error {
 	databaseURI := c.String("mongoDBURI")
 	dryRun := c.Bool("dryRun")
 	disableWatcher := c.Bool("disableWatcher")
+	mongoDBConnectTimeout := c.Duration("mongoDBConnectTimeout")
 
 	// Set the batch size.
 	counts.MaxBatchWriteSize = c.Int("batchSize")
@@ -38,7 +39,7 @@ func run(c *cli.Context) error {
 	databaseName := u.Path[1:]
 
 	// Create a context for connecting to MongoDB.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), mongoDBConnectTimeout)
 	defer cancel()
 
 	// Connect to MongoDB now.
@@ -56,7 +57,7 @@ func run(c *cli.Context) error {
 	}()
 
 	// Ensure we're connected to the primary.
-	ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), mongoDBConnectTimeout)
 	defer cancel()
 
 	if err := client.Ping(ctx, readpref.Primary()); err != nil {
@@ -187,6 +188,12 @@ func main() {
 			Usage:   "specify the batch size to write the update for the stories",
 			Value:   1000,
 			EnvVars: []string{"BATCH_SIZE"},
+		},
+		&cli.DurationFlag{
+			Name:    "mongoDBConnectTimeout",
+			Usage:   "used to specify the timeout for connecting to MongoDB",
+			Value:   1 * time.Minute,
+			EnvVars: []string{"MONGODB_CONNECT_TIMEOUT"},
 		},
 	}
 	app.Action = run

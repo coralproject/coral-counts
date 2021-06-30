@@ -90,25 +90,33 @@ func ProcessSite(ctx context.Context, db *mongo.Database, tenantID, siteID strin
 
 	logrus.WithField("took", time.Since(started)).Info("loaded counts from site stories")
 
-	started = time.Now()
-	logrus.Info("updating site")
+	if dryRun {
+		logrus.WithFields(logrus.Fields{
+			"commentCounts": site.CommentCounts,
+		}).Info("not writing site update as --dryRun is enabled")
+	} else {
 
-	// Update the site.
-	if _, err := db.Collection("sites").UpdateOne(ctx, bson.D{
-		primitive.E{Key: "tenantID", Value: tenantID},
-		primitive.E{Key: "id", Value: siteID},
-	}, bson.D{
-		primitive.E{Key: "$set", Value: bson.D{
-			primitive.E{Key: "commentCounts", Value: site.CommentCounts},
-		}},
-	}); err != nil {
-		return errors.Wrap(err, "could not update the site")
+		started = time.Now()
+		logrus.Info("updating site")
+
+		// Update the site.
+		if _, err := db.Collection("sites").UpdateOne(ctx, bson.D{
+			primitive.E{Key: "tenantID", Value: tenantID},
+			primitive.E{Key: "id", Value: siteID},
+		}, bson.D{
+			primitive.E{Key: "$set", Value: bson.D{
+				primitive.E{Key: "commentCounts", Value: site.CommentCounts},
+			}},
+		}); err != nil {
+			return errors.Wrap(err, "could not update the site")
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"id":   siteID,
+			"took": time.Since(started),
+		}).Info("site updated")
+
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"id":   siteID,
-		"took": time.Since(started),
-	}).Info("site updated")
 
 	return nil
 }

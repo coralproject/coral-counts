@@ -114,27 +114,42 @@ func run(c *cli.Context) error {
 		return errors.Wrap(err, "could not process site")
 	}
 
+	// Process the users.
+	if err := counts.ProcessUsers(ctx, db, tenantID, siteID, nil, dryRun); err != nil {
+		return errors.Wrap(err, "could not process users")
+	}
+
 	for {
 		// Get all the dirty story ID's from the watcher. This will also flush these
 		// events from the watcher.
-		storyIDs := watcher.Dirty()
-		if len(storyIDs) == 0 {
-			logrus.Info("no dirty stories were found")
+		dirty := watcher.Dirty()
+		if dirty == nil {
+			logrus.Info("no dirty stories or users were found")
 			break
 		}
 
 		logrus.WithFields(logrus.Fields{
-			"stories": len(storyIDs),
-		}).Info("recalculating dirty stories")
+			"stories": len(dirty.StoryIDs),
+			"users":   len(dirty.UserIDs),
+		}).Info("recalculating dirty documents")
 
 		// Process the dirty stories.
-		if err := counts.ProcessStories(ctx, db, tenantID, siteID, storyIDs, dryRun); err != nil {
-			return errors.Wrap(err, "could not process dirty stories")
+		if len(dirty.StoryIDs) > 0 {
+			if err := counts.ProcessStories(ctx, db, tenantID, siteID, dirty.StoryIDs, dryRun); err != nil {
+				return errors.Wrap(err, "could not process dirty stories")
+			}
+
+			// Process the site.
+			if err := counts.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
+				return errors.Wrap(err, "could not process dirty site")
+			}
 		}
 
-		// Process the site.
-		if err := counts.ProcessSite(ctx, db, tenantID, siteID, dryRun); err != nil {
-			return errors.Wrap(err, "could not process dirty site")
+		// Process the dirty users.
+		if len(dirty.UserIDs) > 0 {
+			if err := counts.ProcessUsers(ctx, db, tenantID, siteID, dirty.UserIDs, dryRun); err != nil {
+				return errors.Wrap(err, "could not process users")
+			}
 		}
 	}
 

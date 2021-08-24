@@ -30,8 +30,9 @@ func NewWatcher(db *mongo.Database, tenantID, siteID string) *Watcher {
 type WatchEvent struct {
 	OperationType string `bson:"operationType"`
 	FullDocument  struct {
-		ID      string `bson:"id"`
-		StoryID string `bson:"storyID"`
+		ID       string `bson:"id"`
+		AuthorID string `bson:"authorID"`
+		StoryID  string `bson:"storyID"`
 	} `bson:"fullDocument"`
 }
 
@@ -129,8 +130,13 @@ func (w *Watcher) Watch(ctx context.Context) error {
 	return nil
 }
 
+type DirtyKeys struct {
+	StoryIDs []string
+	UserIDs  []string
+}
+
 // Dirty will return a list of all the story id's that are dirty.
-func (w *Watcher) Dirty() []string {
+func (w *Watcher) Dirty() *DirtyKeys {
 	// Lock access to the records, as we'll be trying to get them all.
 	w.mux.Lock()
 	defer w.mux.Unlock()
@@ -140,26 +146,33 @@ func (w *Watcher) Dirty() []string {
 		return nil
 	}
 
-	// Deduplicate all the story id's.
+	dirty := DirtyKeys{}
+
+	// Deduplicate all the story and user id's.
 	storyIDMap := make(map[string]struct{})
+	userIDMap := make(map[string]struct{})
 	for _, event := range w.events {
 		// If we've already seen this one before, don't add it.
-		if _, ok := storyIDMap[event.FullDocument.StoryID]; ok {
-			continue
+		if _, ok := storyIDMap[event.FullDocument.StoryID]; !ok {
+			// This is new, add it!
+			storyIDMap[event.FullDocument.StoryID] = struct{}{}
+
+			// Add it to the list of dirty story id's.
+			dirty.StoryIDs = append(dirty.StoryIDs, event.FullDocument.StoryID)
 		}
 
-		// This is new, add it!
-		storyIDMap[event.FullDocument.StoryID] = struct{}{}
-	}
+		// If we've already seen this one before, don't add it.
+		if _, ok := userIDMap[event.FullDocument.AuthorID]; !ok {
+			// This is new, add it!
+			userIDMap[event.FullDocument.AuthorID] = struct{}{}
 
-	// Turn the map into a slice.
-	storyIDs := make([]string, 0, len(storyIDMap))
-	for storyID := range storyIDMap {
-		storyIDs = append(storyIDs, storyID)
+			// Add it to the list of dirty user id's.
+			dirty.UserIDs = append(dirty.UserIDs, event.FullDocument.AuthorID)
+		}
 	}
 
 	// Reset the underlying slice.
 	w.events = make([]WatchEvent, 0)
 
-	return storyIDs
+	return &dirty
 }

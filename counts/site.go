@@ -13,28 +13,8 @@ import (
 )
 
 type Site struct {
-	ID            string        `bson:"id"`
-	CommentCounts CommentCounts `bson:"commentCounts"`
-}
-
-func (s *Site) Increment(story *Story) {
-	// Action
-	for key, count := range story.CommentCounts.Action {
-		s.CommentCounts.Action[key] += count
-	}
-
-	// Status
-	s.CommentCounts.Status.Approved += story.CommentCounts.Status.Approved
-	s.CommentCounts.Status.None += story.CommentCounts.Status.None
-	s.CommentCounts.Status.Premod += story.CommentCounts.Status.Premod
-	s.CommentCounts.Status.Rejected += story.CommentCounts.Status.Rejected
-	s.CommentCounts.Status.SystemWithheld += story.CommentCounts.Status.SystemWithheld
-
-	// ModerationQueue
-	s.CommentCounts.ModerationQueue.Total += story.CommentCounts.ModerationQueue.Total
-	s.CommentCounts.ModerationQueue.Queues.Unmoderated += story.CommentCounts.ModerationQueue.Queues.Unmoderated
-	s.CommentCounts.ModerationQueue.Queues.Reported += story.CommentCounts.ModerationQueue.Queues.Reported
-	s.CommentCounts.ModerationQueue.Queues.Pending += story.CommentCounts.ModerationQueue.Queues.Pending
+	ID            string             `bson:"id"`
+	CommentCounts StoryCommentCounts `bson:"commentCounts"`
 }
 
 // ProcessSite will update a given site's counts based on the story documents
@@ -81,7 +61,7 @@ func ProcessSite(ctx context.Context, db *mongo.Database, tenantID, siteID strin
 		}
 
 		// Increment the site document based on this story.
-		site.Increment(&story)
+		site.CommentCounts.Merge(&story.CommentCounts)
 	}
 
 	if err := cursor.Err(); err != nil {

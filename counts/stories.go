@@ -12,60 +12,48 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// Comment is a Comment in Coral.
-type Comment struct {
-	StoryID      string         `bson:"storyID"`
-	Status       string         `bson:"status"`
-	ActionCounts map[string]int `bson:"actionCounts"`
+type StoryCommentCounts struct {
+	Action          CommentActionCounts    `bson:"action"`
+	Status          CommentStatusCounts    `bson:"status"`
+	ModerationQueue CommentModerationQueue `bson:"moderationQueue"`
+}
+
+func (scc *StoryCommentCounts) Merge(counts *StoryCommentCounts) {
+	// Action
+	for key, count := range counts.Action {
+		scc.Action[key] += count
+	}
+
+	// Status
+	scc.Status.Approved += counts.Status.Approved
+	scc.Status.None += counts.Status.None
+	scc.Status.Premod += counts.Status.Premod
+	scc.Status.Rejected += counts.Status.Rejected
+	scc.Status.SystemWithheld += counts.Status.SystemWithheld
+
+	// ModerationQueue
+	scc.ModerationQueue.Total += counts.ModerationQueue.Total
+	scc.ModerationQueue.Queues.Unmoderated += counts.ModerationQueue.Queues.Unmoderated
+	scc.ModerationQueue.Queues.Reported += counts.ModerationQueue.Queues.Reported
+	scc.ModerationQueue.Queues.Pending += counts.ModerationQueue.Queues.Pending
 }
 
 // Story is a Story in Coral.
 type Story struct {
-	ID            string        `bson:"id"`
-	CommentCounts CommentCounts `bson:"commentCounts"`
+	ID            string             `bson:"id"`
+	CommentCounts StoryCommentCounts `bson:"commentCounts"`
 }
 
 // Increment will increment the comment counts based on the passed comment.
 func (s *Story) Increment(comment *Comment) {
 	// Action
-	for key, count := range comment.ActionCounts {
-		s.CommentCounts.Action[key] += count
-	}
+	s.CommentCounts.Action.Increment(comment)
 
 	// Status
-	switch comment.Status {
-	case "APPROVED":
-		s.CommentCounts.Status.Approved++
-	case "NONE":
-		s.CommentCounts.Status.None++
-	case "PREMOD":
-		s.CommentCounts.Status.Premod++
-	case "REJECTED":
-		s.CommentCounts.Status.Rejected++
-	case "SYSTEM_WITHHELD":
-		s.CommentCounts.Status.SystemWithheld++
-	}
+	s.CommentCounts.Status.Increment(comment)
 
 	// ModerationQueue
-	switch comment.Status {
-	case "NONE":
-		s.CommentCounts.ModerationQueue.Total++
-		s.CommentCounts.ModerationQueue.Queues.Unmoderated++
-
-		// If this comment has a flag on it, then it should also be in the reported
-		// queue.
-		if count, ok := comment.ActionCounts["FLAG"]; ok && count > 0 {
-			s.CommentCounts.ModerationQueue.Queues.Reported++
-		}
-	case "PREMOD":
-		s.CommentCounts.ModerationQueue.Total++
-		s.CommentCounts.ModerationQueue.Queues.Unmoderated++
-		s.CommentCounts.ModerationQueue.Queues.Pending++
-	case "SYSTEM_WITHHELD":
-		s.CommentCounts.ModerationQueue.Total++
-		s.CommentCounts.ModerationQueue.Queues.Unmoderated++
-		s.CommentCounts.ModerationQueue.Queues.Pending++
-	}
+	s.CommentCounts.ModerationQueue.Increment(comment)
 }
 
 // ProcessStories will iterate over each stories comments and aggregate the

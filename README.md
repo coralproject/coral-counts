@@ -1,5 +1,7 @@
 # coral-counts
 
+A command-line tool to update Coral comment counts after importing or migrating data.
+
 ![Test](https://github.com/coralproject/coral-counts/workflows/Test/badge.svg)
 
 Visit the [Releases](https://github.com/coralproject/coral-counts/releases) page
